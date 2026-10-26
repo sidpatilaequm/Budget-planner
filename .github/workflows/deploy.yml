@@ -29,6 +29,11 @@ jobs:
           JWT_SECRET: ci_only_validation_secret
         run: docker compose -f docker-compose.prod.yml config --quiet
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Run backend tests
         run: |
           python -m pip install -r backend/requirements.txt pytest
