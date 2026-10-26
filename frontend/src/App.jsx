@@ -19,6 +19,7 @@ function Root() {
   const [stage, setStage] = useState('loading') // loading | setup | login | ready
   const [session, setSession] = useState(null)
   const [message, setMessage] = useState('')
+  const [needsSetup, setNeedsSetup] = useState(false)
 
   const signOutLocal = useCallback((msg = '') => {
     setToken(null); setSession(null); setMessage(msg); setStage('login')
@@ -26,15 +27,16 @@ function Root() {
 
   useEffect(() => {
     setUnauthorizedHandler((msg) => signOutLocal(msg))
-    ;(async () => {
-      try {
-        if (getToken()) { setSession(await api('/api/auth/me')); setStage('ready'); return }
-        const s = await api('/api/auth/status')
-        setStage(s.needs_setup ? 'setup' : 'login')
-      } catch (e) {
-        if (e.status !== 401) { setMessage(e.message); setStage('login') }
-      }
-    })()
+      ; (async () => {
+        try {
+          if (getToken()) { setSession(await api('/api/auth/me')); setStage('ready'); return }
+          const s = await api('/api/auth/status')
+          setNeedsSetup(s.needs_setup)
+          setStage('home')
+        } catch (e) {
+          if (e.status !== 401) { setMessage(e.message); setStage('login') }
+        }
+      })()
   }, [signOutLocal])
 
   // Sign out after a period without activity.
@@ -46,7 +48,7 @@ function Root() {
     window.addEventListener('keydown', bump, true)
     const t = setInterval(() => {
       if (Date.now() - last.current > IDLE_MINUTES * 60000) {
-        api('/api/auth/logout', { method: 'POST' }).catch(() => {})
+        api('/api/auth/logout', { method: 'POST' }).catch(() => { })
         signOutLocal(`Signed out after ${IDLE_MINUTES} minutes without activity.`)
       }
     }, 30000)
@@ -55,7 +57,7 @@ function Root() {
 
   if (stage === 'loading') return <div className="loading">Loading…</div>
   if (stage !== 'ready') {
-    return <SignIn mode={stage} message={message} onDone={(data) => {
+    return <SignIn mode={stage} needsSetup={needsSetup} message={message} onDone={(data) => {
       setToken(data.token); setSession(data); setMessage(''); setStage('ready'); last.current = Date.now()
     }} />
   }
@@ -65,42 +67,188 @@ function Root() {
   }} />
 }
 
-function SignIn({ mode, message, onDone }) {
-  const setup = mode === 'setup'
+
+function SignIn({ mode, needsSetup, message, onDone }) {
+  const [view, setView] = useState(mode === 'home' ? 'home' : mode)
+  const setup = view === 'setup'
   const [f, setF] = useState({ name: '', username: '', password: '', password2: '' })
   const [err, setErr] = useState(message)
   const [busy, setBusy] = useState(false)
+
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
+
+  const openView = (next) => {
+    setErr('')
+    setView(next)
+  }
+
   const submit = async (e) => {
     e.preventDefault()
+
     if (setup) {
-      if (!f.name.trim() || !f.username.trim()) return setErr('Enter a full name and a username.')
-      if (f.password.length < 8) return setErr('Use a password of at least 8 characters.')
-      if (f.password !== f.password2) return setErr('The two passwords do not match.')
+      if (!f.name.trim() || !f.username.trim()) {
+        return setErr('Enter a full name and a username.')
+      }
+      if (f.password.length < 8) {
+        return setErr('Use a password of at least 8 characters.')
+      }
+      if (f.password !== f.password2) {
+        return setErr('The two passwords do not match.')
+      }
+    } else if (!f.username.trim() || !f.password) {
+      return setErr('Enter your username and password.')
     }
+
     setBusy(true)
     try {
-      const data = await api(setup ? '/api/auth/setup' : '/api/auth/login', {
-        method: 'POST', body: setup ? { name: f.name, username: f.username, password: f.password } : { username: f.username, password: f.password },
-      })
+      const data = await api(
+        setup ? '/api/auth/setup' : '/api/auth/login',
+        {
+          method: 'POST',
+          body: setup
+            ? { name: f.name, username: f.username, password: f.password }
+            : { username: f.username, password: f.password },
+        }
+      )
       onDone(data)
-    } catch (e2) { setErr(e2.message) } finally { setBusy(false) }
+    } catch (e2) {
+      setErr(e2.message)
+    } finally {
+      setBusy(false)
+    }
   }
+
   return (
     <div className="auth">
-      <form className="authcard" onSubmit={submit} noValidate>
-        <h1>Budget planner</h1>
-        <p className="sub">{setup ? 'Create the administrator account. You can add other users and roles after signing in.' : 'Sign in to continue.'}</p>
-        {setup && <label className="field">Full name<input className="inp" value={f.name} onChange={set('name')} autoComplete="name" autoFocus /></label>}
-        <label className="field">Username<input className="inp" value={f.username} onChange={set('username')} autoComplete="username" autoCapitalize="none" autoFocus={!setup} /></label>
-        <label className="field">Password<input className="inp" type="password" value={f.password} onChange={set('password')} autoComplete={setup ? 'new-password' : 'current-password'} /></label>
-        {setup && <label className="field">Repeat password<input className="inp" type="password" value={f.password2} onChange={set('password2')} autoComplete="new-password" /></label>}
-        <p className="err" role="alert">{err}</p>
-        <button className="btn primary" disabled={busy}>{setup ? 'Create account and sign in' : 'Sign in'}</button>
-      </form>
+      <div className="authcard">
+        {view === 'home' ? (
+          <>
+            <h1>Budget planner</h1>
+            <p className="sub">
+              Manage your budgets, income, and expenses in one place.
+            </p>
+
+            <button
+              className="btn primary"
+              type="button"
+              onClick={() => openView('login')}
+            >
+              Sign in
+            </button>
+
+            <button
+              className="btn"
+              type="button"
+              onClick={() => openView(needsSetup ? 'setup' : 'register-info')}
+              style={{ width: '100%', marginTop: 12 }}
+            >
+              Create account
+            </button>
+
+            {view === 'register-info' && (
+              <p className="sub" role="status">
+                The administrator account has already been created.
+                Please contact your administrator to get an account.
+              </p>
+            )}
+          </>
+        ) : view === 'register-info' ? (
+          <>
+            <h1>Create account</h1>
+            <p className="sub">
+              New accounts are managed by your Budget Planner administrator.
+            </p>
+            <button
+              className="btn primary"
+              type="button"
+              onClick={() => openView('home')}
+            >
+              Back
+            </button>
+          </>
+        ) : (
+          <form onSubmit={submit} noValidate>
+            <h1>Budget planner</h1>
+            <p className="sub">
+              {setup
+                ? 'Create the administrator account. You can add other users and roles after signing in.'
+                : 'Sign in to continue.'}
+            </p>
+
+            {setup && (
+              <label className="field">
+                Full name
+                <input
+                  className="inp"
+                  value={f.name}
+                  onChange={set('name')}
+                  autoComplete="name"
+                  autoFocus
+                />
+              </label>
+            )}
+
+            <label className="field">
+              Username
+              <input
+                className="inp"
+                value={f.username}
+                onChange={set('username')}
+                autoComplete="username"
+                autoCapitalize="none"
+                autoFocus={!setup}
+              />
+            </label>
+
+            <label className="field">
+              Password
+              <input
+                className="inp"
+                type="password"
+                value={f.password}
+                onChange={set('password')}
+                autoComplete={setup ? 'new-password' : 'current-password'}
+              />
+            </label>
+
+            {setup && (
+              <label className="field">
+                Repeat password
+                <input
+                  className="inp"
+                  type="password"
+                  value={f.password2}
+                  onChange={set('password2')}
+                  autoComplete="new-password"
+                />
+              </label>
+            )}
+
+            {err && <p className="err" role="alert">{err}</p>}
+
+            <button className="btn primary" disabled={busy}>
+              {busy
+                ? 'Please wait…'
+                : setup
+                  ? 'Create account and sign in'
+                  : 'Sign in'}
+            </button>
+
+            <button
+              className="btn"
+              type="button"
+              style={{ width: '100%', marginTop: 12 }}
+              onClick={() => openView('home')}
+            >
+              Back
+            </button>
+          </form>
+        )}
+      </div>
     </div>
   )
 }
+
 
 function Shell({ session, onSignOut }) {
   const { toast, confirm } = useUi()
