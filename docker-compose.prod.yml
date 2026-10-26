@@ -26,7 +26,7 @@ services:
     build: ./backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: "mysql+pymysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:3306/budget_planner?charset=utf8mb4"
+      DATABASE_URL: "mysql+pymysql://${MYSQL_USER}:${MYSQL_PASSWORD}@budget-planner-db-1:3306/budget_planner?charset=utf8mb4"
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_HOURS: ${JWT_HOURS:-8}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://budget.nexdaequmsupport.com}
