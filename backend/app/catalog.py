@@ -9,6 +9,7 @@ PERMISSION_GROUPS = [
         ("edit_lines", "Add, rename and delete lines"),
         ("manage_heads", "Add, rename and delete heads"),
         ("view_summary", "View summary"),
+        ("transfer_budget", "Transfer budgets between lines"),
     ]),
     ("Planning", [
         ("plan_year", "Plan next year"),
@@ -36,9 +37,9 @@ DEFAULT_ROLES = [
     {"name": "Administrator", "locked": True, "perms": _perms(*ALL_PERMS)},
     {"name": "Finance manager", "locked": False, "perms": _perms(
         "view_expense", "edit_expense", "view_income", "edit_income", "edit_lines", "manage_heads",
-        "view_summary", "plan_year", "manage_years", "manage_limits", "import", "export", "view_log")},
+        "view_summary", "transfer_budget", "plan_year", "manage_years", "manage_limits", "import", "export", "view_log")},
     {"name": "Department editor", "locked": False, "perms": _perms(
-        "view_expense", "edit_expense", "edit_lines", "view_summary")},
+        "view_expense", "edit_expense", "edit_lines", "view_summary", "transfer_budget")},
     {"name": "Viewer", "locked": False, "perms": _perms("view_expense", "view_income", "view_summary", "export")},
 ]
 

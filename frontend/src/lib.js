@@ -79,6 +79,30 @@ export function spread(total, pattern, once = 0, existing = null) {
   return out
 }
 
+
+// Returns the current month index in an April-to-March financial year.
+export function currentFyMonth(yearStart) {
+  const calendarMonth = new Date().getMonth()
+  return calendarMonth >= 3 ? calendarMonth - 3 : calendarMonth + 9
+}
+
+// Downloads an authenticated API response as a file.
+export async function downloadFile(path, filename) {
+  const res = await api(path, { raw: true })
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  try {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 2000)
+  }
+}
+
 // ---------- API client ----------
 const TOKEN_KEY = 'budget-planner.token'
 let token = sessionStorage.getItem(TOKEN_KEY)

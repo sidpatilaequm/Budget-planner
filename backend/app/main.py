@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import CORS_ORIGINS, Base, engine
-from .routers import admin, auth, budget, plan_files
+from .routers import admin, auth, budget, plan_files, templates, transfers
 
 @asynccontextmanager
 async def lifespan(_app):
@@ -24,5 +24,5 @@ def health():
     return {"ok": True}
 
 
-for r in (auth.router, admin.router, budget.router, plan_files.router):
+for r in (auth.router, admin.router, budget.router, plan_files.router, transfers.router, templates.router):
     app.include_router(r)

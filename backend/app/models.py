@@ -59,6 +59,8 @@ class FiscalYear(Base):
         back_populates="year", cascade="all, delete-orphan", order_by="Head.sort_order"
     )
 
+    transfers: Mapped[list["BudgetTransfer"]] = relationship(cascade="all, delete-orphan")
+
     @property
     def label(self) -> str:
         return f"{self.start_year}-{str(self.start_year + 1)[2:]}"
@@ -105,6 +107,39 @@ class Line(Base):
     m11: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
     m12: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
     head: Mapped[Head] = relationship(back_populates="lines")
+
+
+class BudgetTransfer(Base):
+    """Audit record for a budget transfer between two lines."""
+    __tablename__ = "budget_transfers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    year_id: Mapped[int] = mapped_column(
+        ForeignKey("fiscal_years.id", ondelete="CASCADE"), index=True
+    )
+    section: Mapped[str] = mapped_column(String(10))
+    month: Mapped[int] = mapped_column(Integer)  # 0 = April, 11 = March
+    from_line_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lines.id", ondelete="SET NULL"), nullable=True
+    )
+    to_line_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lines.id", ondelete="SET NULL"), nullable=True
+    )
+    from_head_code: Mapped[str] = mapped_column(String(36))
+    from_head_name: Mapped[str] = mapped_column(String(160))
+    from_line_name: Mapped[str] = mapped_column(String(200))
+    to_head_code: Mapped[str] = mapped_column(String(36))
+    to_head_name: Mapped[str] = mapped_column(String(160))
+    to_line_name: Mapped[str] = mapped_column(String(200))
+    amount: Mapped[Decimal] = mapped_column(Numeric(15, 2))
+    reason: Mapped[str] = mapped_column(String(300))
+    status: Mapped[str] = mapped_column(String(10), default="done")
+    reverses_id: Mapped[int | None] = mapped_column(
+        ForeignKey("budget_transfers.id", ondelete="SET NULL"), nullable=True
+    )
+    created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_by_name: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Activity(Base):

@@ -8,6 +8,8 @@ import Limits from './components/Limits'
 import Activity from './components/Activity'
 import Users from './components/Users'
 import PasswordDialog from './components/PasswordDialog'
+import Transfers from './components/Transfers'
+import Templates from './components/Templates'
 
 const IDLE_MINUTES = 30
 
@@ -277,6 +279,8 @@ function Shell({ session, onSignOut }) {
   if (can('manage_limits') && can('view_expense')) tabs.push(['limits', 'Budget limits'])
   if (can('view_log')) tabs.push(['activity', 'Activity'])
   if (can('manage_users')) tabs.push(['users', 'Users and roles'])
+  if (can('transfer_budget') && (can('view_expense') || can('view_income'))) tabs.push(['transfers', 'Transfers'])
+  if (can('view_expense') || can('view_income')) tabs.push(['templates', 'Excel templates'])
   const activeTab = tabs.some((t) => t[0] === tab) ? tab : tabs[0]?.[0]
   const year = years.find((y) => y.id === yearId)
 
@@ -353,6 +357,8 @@ function Shell({ session, onSignOut }) {
         {year && activeTab === 'limits' && <Limits key={`${yearId}-${stamp}`} yearId={yearId} onChanged={changed} />}
         {activeTab === 'activity' && <Activity />}
         {year && activeTab === 'users' && <Users yearId={yearId} me={session.user} />}
+        {year && activeTab === 'transfers' && <Transfers key={`${yearId}-${stamp}`} yearId={yearId} yearStart={year.start} can={can} onChanged={changed} />}
+        {year && activeTab === 'templates' && <Templates key={`${yearId}-${stamp}`} year={year} can={can} onChanged={changed} />}
       </main>
       <YearsDialog open={yearsOpen} onClose={() => setYearsOpen(false)} years={years} yearId={yearId}
         onDone={async (id, msg) => { await goToYear(id ?? undefined); toast(msg) }} />
