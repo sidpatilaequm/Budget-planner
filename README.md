@@ -14,6 +14,15 @@ It plans income and expenses month by month (April to March) under heads, with i
 - An activity log.
 - Excel import and export in the `Budget_26-27.xlsx` layout.
 
+Version 2 adds:
+- **Actuals:** from Tally through a small bridge or a direct connection, or entered and imported here.
+- **Budget vs actual.**
+- **Planning from actuals or a forecast.**
+- **TDS:** a report and alerts under the Income-tax Act, 2025 (section 393).
+- **Budget simulations.**
+
+See **[docs/VERSION-2.md](docs/VERSION-2.md)** for the update steps and how each part works.
+
 ```
 budget-planner/
 ├── backend/            FastAPI app (Python 3.11+)

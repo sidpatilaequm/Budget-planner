@@ -3,8 +3,9 @@ import { api, compact, fyNice, money, pctText, pctVal } from '../lib'
 import { Chevron, useUi } from '../ui'
 
 export default function Plan({ years, yearId, can, onCreated }) {
+  const BASIS = { budget: 'its budget', actual: 'its actuals', forecast: 'a forecast: actuals so far, budget for the rest' }
   const { toast, confirm } = useUi()
-  const [p, setP] = useState({ from: yearId, exp: '', inc: '', qty: '', head: {}, item: {}, lock: {}, lockTotal: false, mode: 'auto', carry: true })
+  const [p, setP] = useState({ from: yearId, basis: 'budget', exp: '', inc: '', qty: '', head: {}, item: {}, lock: {}, lockTotal: false, mode: 'auto', carry: true })
   const [open, setOpen] = useState({})
   const [pv, setPv] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -15,7 +16,7 @@ export default function Plan({ years, yearId, can, onCreated }) {
     return {
       from_year_id: +p.from, exp: pctVal(p.exp), inc: pctVal(p.inc), qty: pctVal(p.qty),
       head: nums(p.head), item: nums(p.item), lock: p.lock, lock_total: p.lockTotal, mode: p.mode,
-      carry: p.carry && can('manage_limits'), ...extra,
+      carry: p.carry && can('manage_limits'), basis: p.basis, ...extra,
     }
   }
 
@@ -113,12 +114,16 @@ export default function Plan({ years, yearId, can, onCreated }) {
       <div className="cards">
         <div className="card">
           <h2>Plan FY {fyNice(tgt)} from FY {fyNice(src.start)}</h2>
-          <p className="sub">Set an overall change, then override any head or line. Every change rolls up to its head and to the total. Each line keeps its month-by-month pattern.</p>
+          <p className="sub">{p.basis !== 'budget' && <><b>Starting from {BASIS[p.basis]}</b> (from Tally and the actuals screen). </>}Set an overall change, then override any head or line. Every change rolls up to its head and to the total. Each line keeps its month-by-month pattern.</p>
           <div className="planctl">
             <label className="field">Base year
               <select value={p.from} onChange={(e) => set({ from: +e.target.value, head: {}, item: {}, lock: {} })}>
                 {years.map((y) => <option key={y.id} value={y.id}>FY {fyNice(y.start)}</option>)}
               </select></label>
+            {can('view_actuals') && <label className="field">Plan from
+              <select value={p.basis} onChange={(e) => set({ basis: e.target.value })}>
+                {Object.entries(BASIS).map(([k, l]) => <option key={k} value={k}>{l[0].toUpperCase() + l.slice(1)}</option>)}
+              </select></label>}
             <Pct label="Change in expenses" value={p.exp} onChange={(v) => set({ exp: v })} />
             <Pct label="Change in fees and other income" value={p.inc} onChange={(v) => set({ inc: v })} />
             <Pct label="Change in student numbers" value={p.qty} onChange={(v) => set({ qty: v })} />

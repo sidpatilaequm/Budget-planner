@@ -4,6 +4,11 @@ import { Modal, UiProvider, useUi } from './ui'
 import BudgetGrid from './components/BudgetGrid'
 import Summary from './components/Summary'
 import Plan from './components/Plan'
+import Actuals from './components/Actuals'
+import Compare from './components/Compare'
+import Tds from './components/Tds'
+import Alerts from './components/Alerts'
+import Simulate from './components/Simulate'
 import Limits from './components/Limits'
 import Activity from './components/Activity'
 import Users from './components/Users'
@@ -262,6 +267,13 @@ function Shell({ session, onSignOut }) {
   const [yearsOpen, setYearsOpen] = useState(false)
   const [pwOpen, setPwOpen] = useState(false)
   const fileRef = useRef(null)
+  const [alerts, setAlerts] = useState(null)
+  const loadAlerts = useCallback(async () => {
+    if (!(session.perms.view_tds || session.perms.view_actuals || session.perms.manage_integration)) return
+    try { setAlerts(await api('/api/alerts')) } catch { /* shown on the alerts page */ }
+  }, [session.perms])
+  useEffect(() => { loadAlerts(); const t = setInterval(loadAlerts, 5 * 60 * 1000); return () => clearInterval(t) }, [loadAlerts])
+  useEffect(() => { loadAlerts() }, [tab, loadAlerts])
 
   const refreshYears = useCallback(async (select) => {
     const ys = await api('/api/years')
@@ -275,12 +287,17 @@ function Shell({ session, onSignOut }) {
   if (can('view_income')) tabs.push(['income', 'Income'])
   const both = can('view_expense') && can('view_income')
   if (can('view_summary') && both) tabs.push(['summary', 'Summary'])
+  if (can('view_actuals')) tabs.push(['actuals', 'Actuals'])
+  if (can('view_actuals') && (can('view_expense') || can('view_income'))) tabs.push(['compare', 'Budget vs actual'])
+  if (can('view_tds')) tabs.push(['tds', 'TDS'])
   if (can('plan_year') && both) tabs.push(['plan', 'Plan next year'])
+  if (can('simulate') && both) tabs.push(['simulate', 'Simulations'])
   if (can('manage_limits') && can('view_expense')) tabs.push(['limits', 'Budget limits'])
   if (can('view_log')) tabs.push(['activity', 'Activity'])
   if (can('manage_users')) tabs.push(['users', 'Users and roles'])
   if (can('transfer_budget') && (can('view_expense') || can('view_income'))) tabs.push(['transfers', 'Transfers'])
   if (can('view_expense') || can('view_income')) tabs.push(['templates', 'Excel templates'])
+  if (alerts && (can('view_tds') || can('view_actuals') || can('manage_integration'))) tabs.push(['alerts', `Alerts${alerts.count ? ` (${alerts.count})` : ''}`])
   const activeTab = tabs.some((t) => t[0] === tab) ? tab : tabs[0]?.[0]
   const year = years.find((y) => y.id === yearId)
 
@@ -332,6 +349,9 @@ function Shell({ session, onSignOut }) {
           </label>
           {can('manage_years') && <button className="btn ghost" onClick={() => setYearsOpen(true)}>Manage years</button>}
           <span className="spacer" />
+          {alerts?.count > 0 && <button className={`btn ghost bell ${alerts.high ? 'hot' : ''}`} onClick={() => setTab('alerts')} title="Alerts">
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6zm0 18a2.5 2.5 0 0 0 2.4-2h-4.8A2.5 2.5 0 0 0 12 21z" fill="currentColor" /></svg>
+            {alerts.count}<span className="sr"> alerts</span></button>}
           {can('import') && <>
             <button className="btn ghost" onClick={() => fileRef.current.click()}>Import Excel</button>
             <input ref={fileRef} type="file" accept=".xlsx" hidden onChange={(e) => { const f = e.target.files[0]; e.target.value = ''; if (f) importFile(f) }} />
@@ -359,6 +379,11 @@ function Shell({ session, onSignOut }) {
         {year && activeTab === 'users' && <Users yearId={yearId} me={session.user} />}
         {year && activeTab === 'transfers' && <Transfers key={`${yearId}-${stamp}`} yearId={yearId} yearStart={year.start} can={can} onChanged={changed} />}
         {year && activeTab === 'templates' && <Templates key={`${yearId}-${stamp}`} year={year} can={can} onChanged={changed} />}
+        {year && activeTab === 'actuals' && <Actuals key={`${yearId}-${stamp}`} year={year} can={can} />}
+        {year && activeTab === 'compare' && <Compare key={`${yearId}-${stamp}`} year={year} can={can} />}
+        {year && activeTab === 'tds' && <Tds key={`${yearId}-${stamp}`} year={year} can={can} />}
+        {year && activeTab === 'simulate' && <Simulate key={`${yearId}-${stamp}`} years={years} yearId={yearId} can={can} onApplied={(id) => goToYear(id)} />}
+        {activeTab === 'alerts' && <Alerts data={alerts} reload={loadAlerts} goTo={(t) => setTab(t)} />}
       </main>
       <YearsDialog open={yearsOpen} onClose={() => setYearsOpen(false)} years={years} yearId={yearId}
         onDone={async (id, msg) => { await goToYear(id ?? undefined); toast(msg) }} />

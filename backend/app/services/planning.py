@@ -8,6 +8,8 @@ Rules
 - A fixed expense total is held at base × (1 + overall %). In automatic mode, heads that are neither fixed nor
   given their own % absorb the difference.
 - Income lines with a quantity and a rate: the student % changes the quantity and the income % the rate.
+- The base can be the year's budget, its actuals, or a forecast (actuals so far, budget for the rest).
+  With actuals or a forecast, every line is scaled from those monthly figures (quantity × rate is not used).
 """
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -28,9 +30,16 @@ class PlanRequest(BaseModel):
     mode: str = "auto"                                      # auto | manual
     carry: bool = True
     replace: bool = False
+    basis: str = "budget"                                   # budget | actual | forecast
+    upto: int | None = None                                 # forecast: last month of actuals (0 = April)
 
 
-def expense_plan(src: FiscalYear, req: PlanRequest) -> dict:
+def _bm(ln, base) -> list[float]:
+    """Monthly base figures for a line: from the budget, or from actuals/forecast when given."""
+    return list(base[ln.id]) if base is not None and ln.id in base else months(ln)
+
+
+def expense_plan(src: FiscalYear, req: PlanRequest, base: dict | None = None) -> dict:
     g = req.exp or 0.0
     auto = req.mode != "manual"
     heads = []
@@ -41,7 +50,7 @@ def expense_plan(src: FiscalYear, req: PlanRequest) -> dict:
         lines = []
         for ln in hd.lines:
             lv = req.item.get(str(ln.id))
-            lines.append({"ln": ln, "b": line_total(ln), "over": lv is not None,
+            lines.append({"ln": ln, "b": sum(_bm(ln, base)), "over": lv is not None,
                           "f": 1 + (lv if lv is not None else hp) / 100})
         B = sum(l["b"] for l in lines)
         T = B * (1 + hp / 100)
@@ -77,14 +86,14 @@ def issues(ep: dict, req: PlanRequest) -> dict:
     return {"heads": over_heads, "total": total_over, "count": len(over_heads) + (1 if total_over else 0)}
 
 
-def project(src: FiscalYear, req: PlanRequest) -> tuple[dict, dict]:
+def project(src: FiscalYear, req: PlanRequest, base: dict | None = None) -> tuple[dict, dict]:
     """Returns ({line_id: {"m": [...], "qty": q, "rate": r}}, expense_plan)."""
-    ep = expense_plan(src, req)
+    ep = expense_plan(src, req, base)
     out = {}
     for h in ep["heads"]:
         for l in h["lines"]:
             ln = l["ln"]
-            out[ln.id] = {"m": [float(round(v * l["f"])) for v in months(ln)],
+            out[ln.id] = {"m": [float(round(v * l["f"])) for v in _bm(ln, base)],
                           "qty": float(ln.qty) if ln.qty is not None else None,
                           "rate": round(float(ln.rate) * l["f"], 2) if ln.rate is not None else None}
 
@@ -114,9 +123,9 @@ def project(src: FiscalYear, req: PlanRequest) -> tuple[dict, dict]:
             lv = req.item.get(str(ln.id))
             pct = lv if lv is not None else hv if hv is not None else (req.inc or 0)
             f = 1 + pct / 100
-            qr = ln.qty is not None and ln.rate is not None
-            k = f * (qf if qr else 1)
-            m = [float(round(v * k)) for v in months(ln)]
+            qr = ln.qty is not None and ln.rate is not None and base is None
+            k = f * (qf if (qr or (base is not None and ln.qty is not None)) else 1)
+            m = [float(round(v * k)) for v in _bm(ln, base)]
             qty = float(ln.qty) if ln.qty is not None else None
             rate = float(ln.rate) if ln.rate is not None else None
             if qr:
@@ -133,8 +142,8 @@ def _pct(a: float, b: float) -> float | None:
     return None if not b else round((a / b - 1) * 100, 1)
 
 
-def preview(db: Session, src: FiscalYear, req: PlanRequest, target_exists: bool) -> dict:
-    proj, ep = project(src, req)
+def preview(db: Session, src: FiscalYear, req: PlanRequest, target_exists: bool, base: dict | None = None) -> dict:
+    proj, ep = project(src, req, base)
     iss = issues(ep, req)
     ep_by_head = {h["hd"].id: h for h in ep["heads"]}
     sections = {}
@@ -143,7 +152,7 @@ def preview(db: Session, src: FiscalYear, req: PlanRequest, target_exists: bool)
         for hd in section_heads(src, section):
             lines_out = []
             for ln in hd.lines:
-                b, p = line_total(ln), sum(proj[ln.id]["m"])
+                b, p = sum(_bm(ln, base)), sum(proj[ln.id]["m"])
                 lines_out.append({"id": ln.id, "name": ln.name, "base": b, "proj": p, "eff": _pct(p, b)})
             b = sum(l["base"] for l in lines_out)
             p = sum(l["proj"] for l in lines_out)
@@ -160,6 +169,6 @@ def preview(db: Session, src: FiscalYear, req: PlanRequest, target_exists: bool)
             sec.update(target=ep["TT"], over=ep["P"] - ep["TT"])
         sections[section] = sec
     inc, exp = sections["income"]["proj"], sections["expense"]["proj"]
-    return {"from": {"id": src.id, "start": src.start_year}, "target": {"start": src.start_year + 1, "exists": target_exists},
+    return {"from": {"id": src.id, "start": src.start_year}, "basis": req.basis, "target": {"start": src.start_year + 1, "exists": target_exists},
             "sections": sections, "totals": {"income": inc, "expense": exp, "net": inc - exp},
             "issues": iss["count"]}

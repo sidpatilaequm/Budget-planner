@@ -3,9 +3,10 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import FiscalYear, Line, User
+from ..models import FiscalYear, Head, Line, User
 from ..security import can, require
 from ..services import budget as B
+from ..services import actuals as A
 from ..services import planning as P
 from ..services.excel import export_year, parse_workbook
 
@@ -16,19 +17,32 @@ planner = require("plan_year", "view_expense", "view_income")
 @router.post("/plan/preview")
 def plan_preview(req: P.PlanRequest, db: Session = Depends(get_db), _=Depends(planner)):
     src = B.get_year(db, req.from_year_id)
-    return P.preview(db, src, req, B.year_by_start(db, src.start_year + 1) is not None)
+    base = A.base_months(db, src, req.basis, req.upto)
+    return P.preview(db, src, req, B.year_by_start(db, src.start_year + 1) is not None, base)
 
 
 @router.post("/plan/create")
 def plan_create(req: P.PlanRequest, db: Session = Depends(get_db), user: User = Depends(planner)):
     src = B.get_year(db, req.from_year_id)
-    proj, ep = P.project(src, req)
+    proj, ep = P.project(src, req, A.base_months(db, src, req.basis, req.upto))
     iss = P.issues(ep, req)
     if iss["count"]:
         raise HTTPException(409, "Bring every fixed budget within its amount first.")
+    basis = {"actual": " actuals", "forecast": " forecast"}.get(req.basis, "")
+    y, limits = create_projected_year(db, user, src, proj, ep, req, req.replace)
+    B.log(db, user, f"Created FY {y.label} from FY {src.label}{basis} (expenses {req.exp or 0}%, income {req.inc or 0}%, "
+                    f"students {req.qty or 0}%{f', {limits} limits set' if limits else ''})")
+    db.commit()
+    return {"year": B.year_out(y), "limits": limits}
+
+
+def create_projected_year(db: Session, user: User, src: FiscalYear, proj: dict, ep: dict, req: P.PlanRequest, replace: bool,
+                          extra: list[dict] | None = None):
+    """Creates (or replaces) the year after `src` with projected amounts. `extra` adds lines:
+    [{"section", "head_code", "name", "m"}] (used by simulations). Returns (year, limits set)."""
     target = src.start_year + 1
     existing = B.year_by_start(db, target)
-    if existing and not req.replace:
+    if existing and not replace:
         raise HTTPException(409, f"FY {target}-{str(target + 1)[2:]} already exists.")
     if existing:
         db.delete(existing)
@@ -43,6 +57,15 @@ def plan_create(req: P.PlanRequest, db: Session = Depends(get_db), user: User = 
             p = proj[src_lines[(h.section, h.code, ln.code)]]
             B.set_months(ln, p["m"])
             ln.qty, ln.rate = p["qty"], p["rate"]
+    for e in extra or []:
+        hd = next((h for h in y.heads if h.section == e["section"] and h.code == e["head_code"]), None)
+        if hd is None:
+            hd = Head(year_id=y.id, section=e["section"], code=B.new_code(), name="Simulation additions", sort_order=999)
+            db.add(hd)
+            db.flush()
+        ln = Line(head_id=hd.id, code=B.new_code(), name=e["name"][:200], sort_order=len(hd.lines) + 1)
+        B.set_months(ln, e["m"])
+        db.add(ln)
     limits = 0
     if req.carry and can(user, "manage_limits"):
         if req.lock_total:
@@ -53,10 +76,7 @@ def plan_create(req: P.PlanRequest, db: Session = Depends(get_db), user: User = 
             if h.code in locked:
                 h.limit_mode, h.limit_value = "amount", round(locked[h.code])
                 limits += 1
-    B.log(db, user, f"Created FY {y.label} from FY {src.label} (expenses {req.exp or 0}%, income {req.inc or 0}%, "
-                    f"students {req.qty or 0}%{f', {limits} limits set' if limits else ''})")
-    db.commit()
-    return {"year": B.year_out(y), "limits": limits}
+    return y, limits
 
 
 @router.get("/years/{year_id}/export")
